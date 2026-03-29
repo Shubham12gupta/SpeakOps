@@ -56,6 +56,7 @@ Voice Response — tells you what happened
 No pipeline rewrites. No new infrastructure. Just attach and talk.
 
 ---
+<img width="636" height="624" alt="image" src="https://github.com/user-attachments/assets/a9d3a0d3-af5c-4439-9cdd-868a85e1c5f7" />
 
 ## Core Features
 
