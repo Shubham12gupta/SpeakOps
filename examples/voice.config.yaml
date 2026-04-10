@@ -1,0 +1,654 @@
+# ─────────────────────────────────────────────
+#  SpeakOps Configuration
+#  voice.config.yaml
+#  github.com/Shubham12gupta/SpeakOps
+# ─────────────────────────────────────────────
+
+# 1. META
+meta:
+  project_name: speakops
+  version: v1
+  owner_email: "shubhamitair@gmail.com"
+  description: "This is the first version of SpeakOps project"
+
+# 2. ENVIRONMENTS
+environments:
+  development:
+    namespace: dev
+    restrictions: false
+    auto_confirm: true
+  staging:
+    namespace: staging
+    restrictions: false
+    auto_confirm: true
+  production:
+    namespace: production
+    restrictions: true
+    auto_confirm: false
+    restricted_hours: "09:00-18:00"
+
+# 3. CONNECTORS
+connectors:
+  kubernetes:
+    type: eks
+    cluster: my-cluster.ap-south-1.eksctl.io
+    auth: kubeconfig
+    api_key: ${KUBE_API_KEY}
+    package_manager:
+      type: helm
+      release_name: my-app
+      chart_path: ./helm/my-app
+      values_file: ./helm/values.yaml
+
+  jenkins:
+    url: ${JENKINS_URL}
+    api_key: ${JENKINS_API_KEY}
+    jobs:
+      build: my-app-build
+      deploy: my-app-deploy
+      test: my-app-test
+
+  argocd:
+    url: ${ARGOCD_URL}
+    api_key: ${ARGOCD_API_KEY}
+    apps:
+      staging: my-app-staging
+      production: my-app-production
+
+  grafana:
+    url: ${GRAFANA_URL}
+    api_key: ${GRAFANA_API_KEY}
+    dashboards:
+      default: cluster-overview
+      infra: infrastructure-health
+      payment: payment-service-metrics
+
+  vault:
+    address: ${VAULT_ADDRESS}
+    api_key: ${VAULT_TOKEN}
+    path: secret/speakops
+
+# 4. RBAC
+rbac:
+  junior_engineer:
+    access: read
+    allowed_operations: [podStatus, fetchLogs, resourceUsage, checkPipelineStatus, checkAppHealth, fetchMetrics]
+    denied_operations: [scaleDeployment, restart, rollback, helmUpgrade, helmRollback, triggerBuild, triggerDeploy]
+
+  senior_engineer:
+    access: read_write
+    allowed_operations: ["*"]
+    require_confirm_for: [scaleDeployment, rollback, helmUpgrade, helmRollback, rollbackApp, triggerDeploy]
+
+  admin:
+    access: read_write
+    allowed_operations: ["*"]
+    bypass_confirm: false
+
+# 5. VOICE COMMANDS
+voiceCommands:
+
+  # ── KUBERNETES ──────────────────────────────
+  kubernetes:
+
+    scaleDeployment:
+      intent:
+        - "scale {service} to {replicas} replicas"
+        - "scale up {service} to {replicas}"
+        - "increase {service} pods to {replicas}"
+      connector: kubernetes
+      operation: scale
+      params:
+        target: "deployment/{service}"
+        replicas: "{replicas}"
+        namespace: "default"
+      execution:
+        mode: execute
+        confirm_in: [production]
+        timeout: 60
+      safety:
+        blast_radius_check: true
+        max_replicas: 20
+        block_scale_to_zero: true
+      rbac:
+        allowed_roles: [senior_engineer, admin]
+      audit:
+        log: true
+        level: info
+
+    restart:
+      intent:
+        - "restart {service}"
+        - "rolling restart {service}"
+        - "restart deployment {service}"
+      connector: kubernetes
+      operation: rollout_restart
+      params:
+        target: "deployment/{service}"
+        namespace: "default"
+      execution:
+        mode: execute
+        confirm_in: [production]
+        timeout: 60
+      safety:
+        blast_radius_check: true
+      rbac:
+        allowed_roles: [senior_engineer, admin]
+      audit:
+        log: true
+        level: info
+
+    rollback:
+      intent:
+        - "rollback {service}"
+        - "rollback deployment {service}"
+        - "undo last deployment {service}"
+      connector: kubernetes
+      operation: rollout_undo
+      params:
+        target: "deployment/{service}"
+        namespace: "default"
+      execution:
+        mode: execute
+        confirm_in: [staging, production]
+        timeout: 60
+      safety:
+        blast_radius_check: true
+      rbac:
+        allowed_roles: [senior_engineer, admin]
+      audit:
+        log: true
+        level: warning
+
+    podStatus:
+      intent:
+        - "show pod status"
+        - "get all pods"
+        - "what is running"
+      connector: kubernetes
+      operation: get_pods
+      params:
+        namespace: "default"
+        output: voice_summary
+      execution:
+        mode: read
+        confirm_in: []
+        timeout: 30
+      safety:
+        blast_radius_check: false
+      rbac:
+        allowed_roles: [junior_engineer, senior_engineer, admin]
+      audit:
+        log: true
+        level: info
+
+    fetchLogs:
+      intent:
+        - "show logs {service}"
+        - "fetch logs {service}"
+        - "show logs {service} last {duration}"
+      connector: kubernetes
+      operation: fetch_logs
+      params:
+        target: "{service}"
+        namespace: "default"
+        since: "{duration:-10m}"
+      execution:
+        mode: read
+        confirm_in: []
+        timeout: 30
+      safety:
+        blast_radius_check: false
+      rbac:
+        allowed_roles: [junior_engineer, senior_engineer, admin]
+      audit:
+        log: true
+        level: info
+
+    resourceUsage:
+      intent:
+        - "show resource usage"
+        - "check cpu memory"
+        - "top pods"
+      connector: kubernetes
+      operation: get_resource_usage
+      params:
+        namespace: "default"
+        output: voice_summary
+      execution:
+        mode: read
+        confirm_in: []
+        timeout: 30
+      safety:
+        blast_radius_check: false
+      rbac:
+        allowed_roles: [junior_engineer, senior_engineer, admin]
+      audit:
+        log: true
+        level: info
+
+    helmUpgrade:
+      intent:
+        - "upgrade {release} to {version}"
+        - "upgrade helm release {release} to {version}"
+      connector: kubernetes
+      operation: helm_upgrade
+      params:
+        release: "{release}"
+        chart: "{release}"
+        version: "{version}"
+        namespace: "default"
+      execution:
+        mode: execute
+        confirm_in: [production]
+        timeout: 120
+      safety:
+        blast_radius_check: true
+      rbac:
+        allowed_roles: [senior_engineer, admin]
+      audit:
+        log: true
+        level: info
+
+    helmRollback:
+      intent:
+        - "rollback helm {release}"
+        - "helm rollback {release} to {revision}"
+      connector: kubernetes
+      operation: helm_rollback
+      params:
+        release: "{release}"
+        revision: "{revision:-0}"
+        namespace: "default"
+      execution:
+        mode: execute
+        confirm_in: [staging, production]
+        timeout: 120
+      safety:
+        blast_radius_check: true
+      rbac:
+        allowed_roles: [senior_engineer, admin]
+      audit:
+        log: true
+        level: warning
+
+  # ── JENKINS ─────────────────────────────────
+  jenkins:
+
+    triggerBuild:
+      intent:
+        - "trigger build {branch}"
+        - "build {branch} branch"
+        - "run build for {branch}"
+      connector: jenkins
+      operation: trigger_build
+      params:
+        branch: "{branch}"
+        job: "my-app-build"
+      execution:
+        mode: execute
+        confirm_in: []
+        timeout: 60
+      safety:
+        blast_radius_check: false
+      rbac:
+        allowed_roles: [senior_engineer, admin]
+      audit:
+        log: true
+        level: info
+
+    triggerDeploy:
+      intent:
+        - "deploy {branch} to {environment}"
+        - "trigger deploy {branch} to {environment}"
+      connector: jenkins
+      operation: trigger_deploy
+      params:
+        branch: "{branch}"
+        environment: "{environment}"
+        job: "my-app-deploy"
+      execution:
+        mode: execute
+        confirm_in: [production]
+        timeout: 120
+      safety:
+        blast_radius_check: true
+      rbac:
+        allowed_roles: [senior_engineer, admin]
+      audit:
+        log: true
+        level: info
+
+    checkPipelineStatus:
+      intent:
+        - "check pipeline status"
+        - "is build running"
+        - "pipeline status {job}"
+      connector: jenkins
+      operation: get_pipeline_status
+      params:
+        job: "{job:-my-app-build}"
+      execution:
+        mode: read
+        confirm_in: []
+        timeout: 30
+      safety:
+        blast_radius_check: false
+      rbac:
+        allowed_roles: [junior_engineer, senior_engineer, admin]
+      audit:
+        log: true
+        level: info
+
+    cancelPipeline:
+      intent:
+        - "cancel pipeline {job}"
+        - "stop build {job}"
+      connector: jenkins
+      operation: cancel_pipeline
+      params:
+        job: "{job}"
+      execution:
+        mode: execute
+        confirm_in: [staging, production]
+        timeout: 30
+      safety:
+        blast_radius_check: false
+      rbac:
+        allowed_roles: [senior_engineer, admin]
+      audit:
+        log: true
+        level: warning
+
+  # ── ARGOCD ──────────────────────────────────
+  argocd:
+
+    syncApp:
+      intent:
+        - "sync {app}"
+        - "sync argocd app {app}"
+        - "force sync {app}"
+      connector: argocd
+      operation: sync_app
+      params:
+        app: "{app}"
+      execution:
+        mode: execute
+        confirm_in: [production]
+        timeout: 120
+      safety:
+        blast_radius_check: true
+      rbac:
+        allowed_roles: [senior_engineer, admin]
+      audit:
+        log: true
+        level: info
+
+    rollbackApp:
+      intent:
+        - "rollback app {app}"
+        - "argocd rollback {app}"
+      connector: argocd
+      operation: rollback_app
+      params:
+        app: "{app}"
+      execution:
+        mode: execute
+        confirm_in: [staging, production]
+        timeout: 120
+      safety:
+        blast_radius_check: true
+      rbac:
+        allowed_roles: [senior_engineer, admin]
+      audit:
+        log: true
+        level: warning
+
+    checkAppHealth:
+      intent:
+        - "check app health {app}"
+        - "is {app} healthy"
+        - "argocd status {app}"
+      connector: argocd
+      operation: get_app_health
+      params:
+        app: "{app}"
+        output: voice_summary
+      execution:
+        mode: read
+        confirm_in: []
+        timeout: 30
+      safety:
+        blast_radius_check: false
+      rbac:
+        allowed_roles: [junior_engineer, senior_engineer, admin]
+      audit:
+        log: true
+        level: info
+
+    getOutOfSyncApps:
+      intent:
+        - "show out of sync apps"
+        - "which apps are out of sync"
+      connector: argocd
+      operation: get_out_of_sync
+      params:
+        output: voice_summary
+      execution:
+        mode: read
+        confirm_in: []
+        timeout: 30
+      safety:
+        blast_radius_check: false
+      rbac:
+        allowed_roles: [junior_engineer, senior_engineer, admin]
+      audit:
+        log: true
+        level: info
+
+  # ── GRAFANA ─────────────────────────────────
+  grafana:
+
+    openDashboard:
+      intent:
+        - "show monitoring"
+        - "open dashboard {dashboard}"
+        - "show {dashboard} dashboard"
+      connector: grafana
+      operation: open_dashboard
+      params:
+        dashboard: "{dashboard:-default}"
+      execution:
+        mode: read
+        confirm_in: []
+        timeout: 15
+      safety:
+        blast_radius_check: false
+      rbac:
+        allowed_roles: [junior_engineer, senior_engineer, admin]
+      audit:
+        log: true
+        level: info
+
+    fetchMetrics:
+      intent:
+        - "fetch metrics {service}"
+        - "show metrics for {service}"
+      connector: grafana
+      operation: fetch_metrics
+      params:
+        service: "{service}"
+        output: voice_summary
+      execution:
+        mode: read
+        confirm_in: []
+        timeout: 30
+      safety:
+        blast_radius_check: false
+      rbac:
+        allowed_roles: [junior_engineer, senior_engineer, admin]
+      audit:
+        log: true
+        level: info
+
+    showAlerts:
+      intent:
+        - "show alerts"
+        - "any active alerts"
+        - "what alerts are firing"
+      connector: grafana
+      operation: get_alerts
+      params:
+        output: voice_summary
+      execution:
+        mode: read
+        confirm_in: []
+        timeout: 30
+      safety:
+        blast_radius_check: false
+      rbac:
+        allowed_roles: [junior_engineer, senior_engineer, admin]
+      audit:
+        log: true
+        level: info
+
+  # ── INCIDENT ────────────────────────────────
+  incident:
+
+    diagnoseService:
+      intent:
+        - "diagnose {service}"
+        - "something is wrong with {service}"
+        - "check {service} health"
+      connector: kubernetes
+      operation: auto_diagnose
+      params:
+        target: "{service}"
+        checks:
+          - get_pod_status
+          - fetch_recent_logs
+          - check_recent_deploys
+          - get_resource_usage
+        output: voice_summary
+      execution:
+        mode: read
+        confirm_in: []
+        timeout: 60
+      safety:
+        blast_radius_check: false
+      rbac:
+        allowed_roles: [junior_engineer, senior_engineer, admin]
+      audit:
+        log: true
+        level: info
+
+    whatIsBroken:
+      intent:
+        - "what is broken"
+        - "show failing pods"
+        - "what is down"
+      connector: kubernetes
+      operation: get_failing_pods
+      params:
+        namespace: "default"
+        output: voice_summary
+      execution:
+        mode: read
+        confirm_in: []
+        timeout: 30
+      safety:
+        blast_radius_check: false
+      rbac:
+        allowed_roles: [junior_engineer, senior_engineer, admin]
+      audit:
+        log: true
+        level: info
+
+    showRecentEvents:
+       intent:
+        - "show events from last {duration}"
+        - "show recent events"
+        - "what happened in last {duration}"
+        - "cluster events"
+      connector: kubernetes
+      operation: get_events
+      params:
+        namespace: "default"
+        since: "{duration}"
+        output: voice_summary
+      execution:
+        mode: read
+      timeout: 30
+      safety:
+        blast_radius_check: false
+      rbac:
+        allowed_roles:
+         - junior_engineer
+         - senior_engineer
+         - admin
+      audit:
+        log: true
+        level: info
+
+# 6. SAFETY
+safety:
+  dry_run_mode: false
+  blast_radius_check: true
+  max_replicas_voice: 20
+  forbidden_operations:
+    - delete_namespace
+    - delete_pvc
+  block_in_production:
+    - scale_to_zero
+
+# 7. SECURITY
+security:
+  voice_auth:
+    enabled: true
+    enrollment_samples: 3
+    similarity_threshold: 0.85
+    per_environment:
+      development:
+        required: false
+      staging:
+        required: true
+        threshold: 0.80
+      production:
+        required: true
+        threshold: 0.92
+    per_operation:
+      read:
+        required: false
+      write:
+        required: true
+      destructive:
+        required: true
+        threshold: 0.95
+
+# 8. AUDIT
+audit:
+  backend: local
+  log_fields:
+    - timestamp
+    - user
+    - raw_speech
+    - voice_match_score
+    - parsed_intent
+    - environment
+    - command_executed
+    - outcome
+  retention_days: 90
+
+# 9. NOTIFICATIONS
+notifications:
+  on_success:
+    voice_response: true
+  on_failure:
+    voice_response: true
+    slack_alert: true
+    slack_channel: "#devops-alerts"
+  on_production_change:
+    slack_alert: true
+    slack_channel: "#prod-changes"
+
+
