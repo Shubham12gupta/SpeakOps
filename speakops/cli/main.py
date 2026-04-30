@@ -97,6 +97,7 @@ def execute_connector(intent: dict, config) -> dict:
     operation      = intent.get("operation")
     params         = intent.get("params", {})
 
+    # ── KUBERNETES ──────────────────────────────────
     if connector_name == "kubernetes":
         ns = "default"
         env_name = intent.get("environment", "staging")
@@ -106,18 +107,54 @@ def execute_connector(intent: dict, config) -> dict:
 
         k8s_cfg = {}
         if config.connectors and config.connectors.kubernetes:
-            k8s_cfg = config.connectors.kubernetes.dict()
+            k8s_cfg = config.connectors.kubernetes.model_dump()
 
         connector = KubernetesConnector(k8s_cfg, namespace=ns)
         connector.connect()
         return connector.execute(operation, params)
 
+    # ── JENKINS ─────────────────────────────────────
+    elif connector_name == "jenkins":
+        from connectors.jenkins import JenkinsConnector
+
+        jenkins_cfg = {}
+        if config.connectors and config.connectors.jenkins:
+            jenkins_cfg = config.connectors.jenkins.model_dump()
+
+        connector = JenkinsConnector(jenkins_cfg)
+        connector.connect()
+        return connector.execute(operation, params)
+
+    # ── ARGOCD ──────────────────────────────────────
+    elif connector_name == "argocd":
+        from connectors.argocd import ArgocdConnector
+
+        argocd_cfg = {}
+        if config.connectors and config.connectors.argocd:
+            argocd_cfg = config.connectors.argocd.model_dump()
+
+        connector = ArgocdConnector(argocd_cfg)
+        connector.connect()
+        return connector.execute(operation, params)
+
+    # ── GRAFANA ─────────────────────────────────────
+    elif connector_name == "grafana":
+        from connectors.grafana import GrafanaConnector
+
+        grafana_cfg = {}
+        if config.connectors and config.connectors.grafana:
+            grafana_cfg = config.connectors.grafana.model_dump()
+
+        connector = GrafanaConnector(grafana_cfg)
+        connector.connect()
+        return connector.execute(operation, params)
+
+    # ── UNKNOWN ─────────────────────────────────────
     return {
         "success": False,
-        "summary": f"Connector '{connector_name}' not yet implemented in V1",
-        "error"  : f"Connector '{connector_name}' coming in V2",
+        "summary": f"Connector '{connector_name}' not implemented",
+        "error"  : f"Connector '{connector_name}' not found",
     }
-
 
 def capture_voice_text() -> str:
     try:
